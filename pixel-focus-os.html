@@ -567,6 +567,199 @@
             );
         };
 
+        // --- HABIT TRACKER ---
+        const HABIT_TYPES = {
+            GOOD: 'Good',
+            GREAT: 'Great',
+            BAD: 'Bad',
+            TERRIBLE: 'Terrible'
+        };
+        const HABIT_META = {
+            [HABIT_TYPES.GOOD]: { points: 10, badge: 'bg-green-200 text-green-900', emoji: '👍' },
+            [HABIT_TYPES.GREAT]: { points: 30, badge: 'bg-emerald-300 text-emerald-900', emoji: '💯' },
+            [HABIT_TYPES.BAD]: { points: -10, badge: 'bg-yellow-200 text-yellow-900', emoji: '⚠️' },
+            [HABIT_TYPES.TERRIBLE]: { points: -30, badge: 'bg-red-200 text-red-900', emoji: '⛔' },
+        };
+        const getDateKey = (date) => date.toISOString().split('T')[0];
+
+        const HabitTracker = ({ habits, setHabits, habitLog, setHabitLog, selectedDate, setSelectedDate }) => {
+            const { playClick } = useSFX();
+            const [name, setName] = React.useState('');
+            const [habitType, setHabitType] = React.useState(HABIT_TYPES.GOOD);
+            const [points, setPoints] = React.useState(HABIT_META[HABIT_TYPES.GOOD].points);
+            const [emoji, setEmoji] = React.useState('🌟');
+            const [view, setView] = React.useState('Weekly');
+
+            const dateKey = getDateKey(selectedDate);
+            const dayLog = habitLog[dateKey] || {};
+
+            const resetForm = () => {
+                setName('');
+                setHabitType(HABIT_TYPES.GOOD);
+                setPoints(HABIT_META[HABIT_TYPES.GOOD].points);
+                setEmoji('🌟');
+            };
+
+            const addHabit = () => {
+                if (!name.trim()) return;
+                playClick();
+                const parsedPoints = Number(points) || 0;
+                setHabits(prev => [{ id: Date.now().toString(), name: name.trim(), type: habitType, points: parsedPoints, emoji: emoji || HABIT_META[habitType].emoji }, ...prev]);
+                resetForm();
+            };
+
+            const removeHabit = (id) => {
+                playClick();
+                setHabits(habits.filter(h => h.id !== id));
+                setHabitLog(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(date => {
+                        if (next[date]?.[id]) {
+                            const updated = { ...next[date] };
+                            delete updated[id];
+                            if (Object.keys(updated).length === 0) delete next[date];
+                            else next[date] = updated;
+                        }
+                    });
+                    return next;
+                });
+            };
+
+            const toggleHabitDone = (id) => {
+                playClick();
+                setHabitLog(prev => {
+                    const currentDay = prev[dateKey] || {};
+                    const isDone = !!currentDay[id];
+                    const updatedDay = { ...currentDay, [id]: !isDone };
+                    if (!updatedDay[id]) delete updatedDay[id];
+                    const next = { ...prev, [dateKey]: updatedDay };
+                    if (Object.keys(updatedDay).length === 0) delete next[dateKey];
+                    return next;
+                });
+            };
+
+            const computePointsForDate = (date) => {
+                const key = getDateKey(date);
+                const log = habitLog[key] || {};
+                return habits.reduce((sum, h) => log[h.id] ? sum + (Number(h.points) || 0) : sum, 0);
+            };
+
+            const dayPoints = computePointsForDate(selectedDate);
+            const weeklyData = Array.from({ length: 7 }).map((_, i) => {
+                const day = new Date();
+                day.setDate(day.getDate() - (6 - i));
+                return { label: day.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3), value: computePointsForDate(day) };
+            });
+            const monthlyData = Array.from({ length: 30 }).map((_, i) => {
+                const day = new Date();
+                day.setDate(day.getDate() - (29 - i));
+                return { label: day.getDate(), value: computePointsForDate(day) };
+            });
+            const total7 = weeklyData.reduce((s, d) => s + d.value, 0);
+            const bestDay = [...monthlyData].sort((a, b) => b.value - a.value)[0];
+
+            const renderGraph = (data) => {
+                const maxVal = Math.max(1, ...data.map(d => Math.abs(d.value)));
+                return (
+                    <div className="flex items-end gap-1 h-40">
+                        {data.map((d, idx) => {
+                            const height = (Math.abs(d.value) / maxVal) * 100;
+                            const isNegative = d.value < 0;
+                            return (
+                                <div key={idx} className="flex-1 flex flex-col items-center text-xs">
+                                    <div className={`w-full ${PIXEL_BORDER_STYLE} ${isNegative ? 'bg-red-300 text-red-900' : 'bg-accent/80 text-white'}`} style={{ height: `${Math.max(8, height)}%` }}></div>
+                                    <span className="mt-1">{d.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            };
+
+            const shiftDay = (offset) => {
+                playClick();
+                setSelectedDate(prev => {
+                    const next = new Date(prev);
+                    next.setDate(next.getDate() + offset);
+                    return next;
+                });
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className={`p-4 ${PIXEL_BORDER_STYLE} bg-card flex flex-col`}>
+                        <h2 className="text-xl mb-2">HABIT CREATOR</h2>
+                        <div className="space-y-3">
+                            <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addHabit()} placeholder="Add a habit..." className={`w-full p-2 bg-bg ${PIXEL_BORDER_STYLE} focus:outline-none`} />
+                            <div className="flex gap-2">
+                                <select value={habitType} onChange={e => { const v = e.target.value; setHabitType(v); setPoints(HABIT_META[v].points); }} className={`flex-1 p-2 bg-bg ${PIXEL_BORDER_STYLE}`}>
+                                    {Object.values(HABIT_TYPES).map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                                </select>
+                                <input type="number" value={points} onChange={e => setPoints(e.target.value)} className={`w-24 p-2 bg-bg ${PIXEL_BORDER_STYLE}`} />
+                                <input value={emoji} onChange={e => setEmoji(e.target.value)} maxLength={4} className={`w-16 p-2 bg-bg ${PIXEL_BORDER_STYLE}`} />
+                            </div>
+                            <button onClick={addHabit} className={`${PIXEL_BUTTON_STYLE} bg-accent text-white w-full`}>SAVE HABIT</button>
+                        </div>
+                        <ul className="mt-4 space-y-2 overflow-y-auto flex-grow">
+                            {habits.length === 0 && <p className="text-sm text-text/70">No habits yet. Create one to start tracking.</p>}
+                            {habits.map(habit => (
+                                <li key={habit.id} className="p-2 bg-bg flex items-center justify-between">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xl">{habit.emoji || '🌟'}</span>
+                                            <span>{habit.name}</span>
+                                        </div>
+                                        <div className="flex gap-2 text-xs mt-1">
+                                            <span className={`px-2 py-0.5 ${HABIT_META[habit.type]?.badge || 'bg-card'}`}>{habit.type}</span>
+                                            <span className="px-2 py-0.5 bg-card border border-text">{habit.points} pts</span>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => removeHabit(habit.id)} className="text-red-500">X</button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div className={`p-4 ${PIXEL_BORDER_STYLE} bg-card flex flex-col`}>
+                        <div className="flex justify-between items-center mb-2">
+                            <button onClick={() => shiftDay(-1)} className={PIXEL_BUTTON_STYLE}>&lt;</button>
+                            <h2 className="text-lg text-center flex-1">{selectedDate.toDateString()}</h2>
+                            <button onClick={() => shiftDay(1)} className={PIXEL_BUTTON_STYLE}>&gt;</button>
+                        </div>
+                        <p className="text-sm mb-2">Daily points: <span className="text-accent font-bold">{dayPoints}</span></p>
+                        <div className="space-y-2 flex-grow overflow-y-auto">
+                            {habits.length === 0 && <p className="text-sm text-text/70">Add habits to mark them complete.</p>}
+                            {habits.map(habit => {
+                                const completed = !!dayLog[habit.id];
+                                return (
+                                    <label key={habit.id} className={`flex items-center gap-3 p-2 ${PIXEL_BORDER_STYLE} bg-bg`}>
+                                        <input type="checkbox" checked={completed} onChange={() => toggleHabitDone(habit.id)} className={`w-5 h-5 appearance-none ${PIXEL_BORDER_STYLE} checked:bg-accent`} />
+                                        <div className="flex flex-col">
+                                            <span className={completed ? 'line-through text-text/60' : ''}>{habit.emoji || '🌟'} {habit.name}</span>
+                                            <span className="text-xs text-text/70">{habit.type} · {habit.points} pts</span>
+                                        </div>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className={`p-4 ${PIXEL_BORDER_STYLE} bg-card flex flex-col`}>
+                        <h2 className="text-xl mb-2">HABIT PROGRESS</h2>
+                        <div className="flex border-b-4 border-text mb-2">
+                            {['Weekly', 'Monthly'].map(v => <button key={v} onClick={() => { playClick(); setView(v); }} className={`flex-1 px-4 py-1 ${view === v ? 'bg-accent text-white' : ''}`}>{v.toUpperCase()}</button>)}
+                        </div>
+                        {view === 'Weekly' ? renderGraph(weeklyData) : renderGraph(monthlyData)}
+                        <div className="mt-3 text-sm space-y-1">
+                            <p>Last 7 days: <span className="font-bold text-accent">{total7}</span> pts</p>
+                            {bestDay && <p>Best recent day: <span className="font-bold text-accent">{bestDay.label}</span> ({bestDay.value} pts)</p>}
+                            <p className="text-text/70">Track good, great, bad or terrible habits daily and watch your score.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- MAIN APP COMPONENT ---
         const App = () => {
             const [initialSeconds, setInitialSeconds] = React.useState(25 * 60);
@@ -576,10 +769,13 @@
             const [pomodoroState, setPomodoroState] = React.useState(PomodoroState.Focus);
             const [pomodoroCount, setPomodoroCount] = React.useState(0);
             const [isPomodoroMode, setIsPomodoroMode] = React.useState(true);
+            const [activeMode, setActiveMode] = React.useState('focus');
 
             const [todos, setTodos] = useLocalStorage('todos', []);
             const [goals, setGoals] = useLocalStorage('goals', []);
             const [progress, setProgress] = useLocalStorage('progress', {});
+            const [habits, setHabits] = useLocalStorage('habits', []);
+            const [habitLog, setHabitLog] = useLocalStorage('habit_log', {});
             const [selectedDate, setSelectedDate] = React.useState(new Date());
 
             const { playClick } = useSFX();
@@ -639,63 +835,83 @@
             const toggleTimerActive = () => { playClick(); setIsActive(!isActive); }
             const resetTimer = () => { playClick(); setIsActive(false); setSecondsLeft(initialSeconds); };
             const addFiveMinutes = () => { playClick(); setSecondsLeft(s => s + 300); if(!isPomodoroMode) setInitialSeconds(s => s + 300); }
+            React.useEffect(() => {
+                if (activeMode === 'habit') {
+                    setIsActive(false);
+                }
+            }, [activeMode]);
             
             return (
                 <div className="bg-bg text-text min-h-screen transition-colors duration-300 p-4 lg:p-8 text-lg">
                     <div className="max-w-7xl mx-auto">
                         <header className={`flex justify-between items-center mb-6 p-4 ${PIXEL_BORDER_STYLE} bg-card`}>
                             <h1 className="text-2xl lg:text-3xl">PIXEL FOCUS OS</h1>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex flex-wrap items-center gap-2 justify-end">
+                                <div className={`${PIXEL_BORDER_STYLE} bg-card flex`}>
+                                    {['focus', 'habit'].map(mode => (
+                                        <button key={mode} onClick={() => { playClick(); setActiveMode(mode); }} className={`px-3 py-1 text-sm ${activeMode === mode ? 'bg-accent text-white' : ''}`}>
+                                            {mode.toUpperCase()} MODE
+                                        </button>
+                                    ))}
+                                </div>
                                 <SFXToggle />
                                 <ThemeSwitcher />
                             </div>
                         </header>
 
                         <main className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                            <div className={`lg:col-span-3 p-6 ${PIXEL_BORDER_STYLE} bg-card flex flex-col items-center justify-center`}>
-                                <div className="flex flex-wrap justify-center space-x-2 mb-4">
-                                    {Object.values(PomodoroState).map(state => (
-                                        <button key={state} onClick={() => handlePomodoroSelect(state)} className={`${PIXEL_BUTTON_STYLE} ${(isPomodoroMode && pomodoroState === state) ? 'bg-accent text-white' : 'bg-card'}`}>
-                                            {state}
-                                        </button>
-                                    ))}
+                            {activeMode === 'focus' ? (
+                                <>
+                                    <div className={`lg:col-span-3 p-6 ${PIXEL_BORDER_STYLE} bg-card flex flex-col items-center justify-center`}>
+                                        <div className="flex flex-wrap justify-center space-x-2 mb-4">
+                                            {Object.values(PomodoroState).map(state => (
+                                                <button key={state} onClick={() => handlePomodoroSelect(state)} className={`${PIXEL_BUTTON_STYLE} ${(isPomodoroMode && pomodoroState === state) ? 'bg-accent text-white' : 'bg-card'}`}>
+                                                    {state}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <PixelClock seconds={secondsLeft} initialSeconds={initialSeconds} />
+                                        <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
+                                            <button onClick={toggleTimerActive} className={`${PIXEL_BUTTON_STYLE} bg-accent text-white flex items-center gap-2`}>{isActive ? <><PauseIcon /> PAUSE</> : <><PlayIcon /> PLAY</>}</button>
+                                            <button onClick={resetTimer} className={`${PIXEL_BUTTON_STYLE} bg-card flex items-center gap-2`}><ResetIcon /> RESET</button>
+                                            <button onClick={addFiveMinutes} className={`${PIXEL_BUTTON_STYLE} bg-card flex items-center gap-2`}><PlusIcon /> +5 MINS</button>
+                                        </div>
+                                         <div className="mt-6 flex items-center gap-2">
+                                            <label>CUSTOM (MINS):</label>
+                                            <input type="number" min="1" defaultValue={25} onChange={(e) => handleSetTime(Number(e.target.value))} className={`w-20 p-1 ${PIXEL_BORDER_STYLE} bg-bg text-center focus:outline-none`} />
+                                        </div>
+                                        <GlobalProgressBars />
+                                    </div>
+
+                                    <div className="lg:col-span-2 lg:row-span-2">
+                                        <GoalsPanel goals={goals} setGoals={setGoals} />
+                                    </div>
+
+                                    <div className="lg:col-span-3">
+                                         <ProgressTracker progress={progress} />
+                                    </div>
+
+                                    <div className="lg:col-span-3">
+                                        <TodoList todos={todos} setTodos={setTodos} selectedDate={selectedDate} />
+                                    </div>
+
+                                    <div className="lg:col-span-2">
+                                        <PixelPlant />
+                                    </div>
+                                    
+                                    <div className="lg:col-span-3">
+                                        <Calendar selectedDate={selectedDate} setSelectedDate={setSelectedDate} todos={todos} />
+                                    </div>
+
+                                    <div className="lg:col-span-2 p-4 flex flex-col justify-center">
+                                        <BrownNoisePlayer />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="lg:col-span-5">
+                                    <HabitTracker habits={habits} setHabits={setHabits} habitLog={habitLog} setHabitLog={setHabitLog} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
                                 </div>
-                                <PixelClock seconds={secondsLeft} initialSeconds={initialSeconds} />
-                                <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
-                                    <button onClick={toggleTimerActive} className={`${PIXEL_BUTTON_STYLE} bg-accent text-white flex items-center gap-2`}>{isActive ? <><PauseIcon /> PAUSE</> : <><PlayIcon /> PLAY</>}</button>
-                                    <button onClick={resetTimer} className={`${PIXEL_BUTTON_STYLE} bg-card flex items-center gap-2`}><ResetIcon /> RESET</button>
-                                    <button onClick={addFiveMinutes} className={`${PIXEL_BUTTON_STYLE} bg-card flex items-center gap-2`}><PlusIcon /> +5 MINS</button>
-                                </div>
-                                 <div className="mt-6 flex items-center gap-2">
-                                    <label>CUSTOM (MINS):</label>
-                                    <input type="number" min="1" defaultValue={25} onChange={(e) => handleSetTime(Number(e.target.value))} className={`w-20 p-1 ${PIXEL_BORDER_STYLE} bg-bg text-center focus:outline-none`} />
-                                </div>
-                                <GlobalProgressBars />
-                            </div>
-
-                            <div className="lg:col-span-2 lg:row-span-2">
-                                <GoalsPanel goals={goals} setGoals={setGoals} />
-                            </div>
-
-                            <div className="lg:col-span-3">
-                                 <ProgressTracker progress={progress} />
-                            </div>
-
-                            <div className="lg:col-span-3">
-                                <TodoList todos={todos} setTodos={setTodos} selectedDate={selectedDate} />
-                            </div>
-
-                            <div className="lg:col-span-2">
-                                <PixelPlant />
-                            </div>
-                            
-                            <div className="lg:col-span-3">
-                                <Calendar selectedDate={selectedDate} setSelectedDate={setSelectedDate} todos={todos} />
-                            </div>
-
-                            <div className="lg:col-span-2 p-4 flex flex-col justify-center">
-                                <BrownNoisePlayer />
-                            </div>
+                            )}
                         </main>
 
                         <footer className="text-center text-sm py-4 mt-6 text-text/70">
